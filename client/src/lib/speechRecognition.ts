@@ -11,12 +11,12 @@ interface IWindow extends Window {
 const initSpeechRecognition = () => {
   const window = globalThis as unknown as IWindow;
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  
+
   if (!SpeechRecognition) {
     console.error('Speech recognition not supported in this browser');
     return null;
   }
-  
+
   return new SpeechRecognition();
 };
 
@@ -34,46 +34,46 @@ export class SpeechToTextService {
   private startTime: number = 0;
   private language: string;
   private onTranscriptUpdate: (transcript: string, cues: SubtitleCue[]) => void;
-  
+
   constructor(options: SpeechToTextOptions = {}, onUpdate: (transcript: string, cues: SubtitleCue[]) => void) {
     this.recognition = initSpeechRecognition();
     this.language = options.language || 'ru-RU'; // Default to Russian
     this.onTranscriptUpdate = onUpdate;
-    
+
     if (!this.recognition) {
       console.error('Could not initialize speech recognition');
       return;
     }
-    
+
     // Configure the recognition
     this.recognition.lang = this.language;
     this.recognition.continuous = options.continuous !== undefined ? options.continuous : true;
     this.recognition.interimResults = options.interimResults !== undefined ? options.interimResults : true;
-    
+
     // Setup event handlers
     this.setupEventListeners();
   }
-  
+
   private setupEventListeners() {
     if (!this.recognition) return;
-    
+
     this.recognition.onresult = (event: any) => {
       const result = event.results[event.resultIndex];
       const transcript = result[0].transcript;
       const isFinal = result.isFinal;
-      
+
       if (isFinal) {
         // Create a new subtitle cue
         const endTime = (Date.now() - this.startTime) / 1000;
         const startTime = endTime - (transcript.length * 0.08); // Rough estimation for start time
-        
+
         const cue: SubtitleCue = {
           id: `cue-${this.currentCueId++}`,
           start: startTime,
           end: endTime,
           text: transcript.trim()
         };
-        
+
         this.cues.push(cue);
         this.onTranscriptUpdate(transcript, this.cues);
       } else {
@@ -81,7 +81,7 @@ export class SpeechToTextService {
         this.onTranscriptUpdate(transcript, this.cues);
       }
     };
-    
+
     this.recognition.onerror = (event: any) => {
       console.error('Speech recognition error', event.error);
       if (event.error === 'no-speech') {
@@ -89,7 +89,7 @@ export class SpeechToTextService {
         this.restart();
       }
     };
-    
+
     this.recognition.onend = () => {
       // Restart if still listening
       if (this.isListening) {
@@ -97,16 +97,16 @@ export class SpeechToTextService {
       }
     };
   }
-  
+
   start() {
     if (!this.recognition) return;
-    
+
     // Only start if not already listening to prevent errors
     if (this.isListening) {
       console.log('Speech recognition already active');
       return;
     }
-    
+
     try {
       this.isListening = true;
       this.startTime = Date.now();
@@ -115,7 +115,7 @@ export class SpeechToTextService {
     } catch (err) {
       console.error('Error starting speech recognition:', err);
       this.isListening = false;
-      
+
       // Try to recover by creating a new instance
       setTimeout(() => {
         this.recognition = initSpeechRecognition();
@@ -124,7 +124,7 @@ export class SpeechToTextService {
           this.recognition.continuous = true;
           this.recognition.interimResults = true;
           this.setupEventListeners();
-          
+
           try {
             this.isListening = true;
             this.startTime = Date.now();
@@ -138,16 +138,16 @@ export class SpeechToTextService {
       }, 500);
     }
   }
-  
+
   stop() {
     if (!this.recognition) return;
-    
+
     // Only stop if currently listening
     if (!this.isListening) {
       console.log('Speech recognition already stopped');
       return this.cues;
     }
-    
+
     try {
       this.isListening = false;
       this.recognition.stop();
@@ -157,17 +157,17 @@ export class SpeechToTextService {
       // Mark as not listening anyway
       this.isListening = false;
     }
-    
+
     return this.cues;
   }
-  
+
   restart() {
     if (!this.recognition || !this.isListening) return;
-    
+
     try {
       this.recognition.stop();
       this.isListening = false; // Mark as not listening during the restart process
-      
+
       setTimeout(() => {
         if (this.recognition) { // Check again in case it was cleared during the timeout
           this.isListening = true; // Set back to listening before starting
@@ -179,7 +179,7 @@ export class SpeechToTextService {
             // Try to recover
             this.isListening = false;
             this.recognition.stop();
-            
+
             // Create a new instance as a last resort
             this.recognition = initSpeechRecognition();
             if (this.recognition) {
@@ -198,19 +198,19 @@ export class SpeechToTextService {
       console.error('Error stopping speech recognition before restart:', err);
     }
   }
-  
+
   changeLanguage(language: string) {
     if (!this.recognition) return;
-    
+
     this.language = language;
     this.recognition.lang = language;
-    
+
     // Restart recognition with new language
     if (this.isListening) {
       this.restart();
     }
   }
-  
+
   getCurrentSubtitleTrack(): SubtitleTrack {
     return {
       id: `track-speech-${this.language}`,
@@ -220,12 +220,12 @@ export class SpeechToTextService {
       isDefault: true
     };
   }
-  
+
   clearCues() {
     this.cues = [];
     this.currentCueId = 1;
   }
-  
+
   private getLanguageLabel(langCode: string): string {
     const languages: Record<string, string> = {
       'ru-RU': 'Russian',
@@ -238,22 +238,27 @@ export class SpeechToTextService {
       'zh-CN': 'Chinese',
       'ja-JP': 'Japanese'
     };
-    
+
     return languages[langCode] || langCode;
   }
 }
 
-const MAX_RETRIES = 3;
-const BACKOFF_DELAY = 1000;
+import { SubtitleTrack } from '../../shared/schema';
+
+interface IWindow extends Window {
+  SpeechRecognition: any;
+  webkitSpeechRecognition: any;
+}
 
 export class SpeechRecognitionService {
   private recognition: any;
-  private retryCount: number = 0;
-  private isInFallbackMode: boolean = false;
+  private language: string = 'en-US';
+  private isListening: boolean = false;
 
   constructor() {
     const window = globalThis as unknown as IWindow;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
     if (SpeechRecognition) {
       this.recognition = new SpeechRecognition();
       this.setupRecognition();
@@ -261,47 +266,55 @@ export class SpeechRecognitionService {
   }
 
   private setupRecognition() {
+    if (!this.recognition) return;
+
     this.recognition.continuous = true;
     this.recognition.interimResults = true;
+    this.recognition.lang = this.language;
+
+    this.recognition.onresult = (event: any) => {
+      const result = event.results[event.results.length - 1];
+      if (result.isFinal) {
+        console.log('Final result:', result[0].transcript);
+      }
+    };
 
     this.recognition.onerror = (event: any) => {
-      console.warn("Speech recognition error", event.error);
-      if (["network", "aborted"].includes(event.error) && this.retryCount < MAX_RETRIES) {
-        this.retryWithBackoff();
-      } else {
-        this.enableFallbackMode();
-      }
+      console.warn('Speech recognition error:', event.error);
+      this.isListening = false;
     };
   }
 
-  private retryWithBackoff() {
-    this.retryCount++;
-    setTimeout(() => {
-      if (!this.isInFallbackMode) {
-        this.start();
-      }
-    }, BACKOFF_DELAY * this.retryCount);
-  }
-
-  private enableFallbackMode() {
-    this.isInFallbackMode = true;
-    // Implement fallback subtitle display logic here
-  }
-
   public start() {
-    if (this.recognition && !this.isInFallbackMode) {
+    if (this.recognition && !this.isListening) {
       try {
         this.recognition.start();
+        this.isListening = true;
       } catch (err) {
-        console.error("Failed to start speech recognition:", err);
-        this.enableFallbackMode();
+        console.error('Failed to start speech recognition:', err);
       }
     }
   }
 
   public stop() {
+    if (this.recognition && this.isListening) {
+      try {
+        this.recognition.stop();
+        this.isListening = false;
+      } catch (err) {
+        console.error('Failed to stop speech recognition:', err);
+      }
+    }
+  }
+
+  public changeLanguage(language: string) {
+    this.language = language;
     if (this.recognition) {
-      this.recognition.stop();
+      this.recognition.lang = language;
+      if (this.isListening) {
+        this.stop();
+        this.start();
+      }
     }
   }
 }
