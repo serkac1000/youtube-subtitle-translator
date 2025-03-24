@@ -591,7 +591,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                             } rounded cursor-pointer`}
                             onClick={() => {
                               setUseSpeechRecognition(true);
-                              changeSpeechRecognitionLanguage('en-US');
+                              changeSpeechRecognitionLanguage(currentLanguage);
                               if (playerState === 'playing') {
                                 setSpeechToTextEnabled(true);
                                 if (speechToTextService.current) {
