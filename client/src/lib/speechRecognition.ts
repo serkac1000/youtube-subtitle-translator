@@ -3,8 +3,8 @@ import { SubtitleCue, SubtitleTrack } from '../types';
 
 // Define a type for the Web Speech API which isn't fully typed in TypeScript by default
 interface IWindow extends Window {
-  SpeechRecognition: any;
-  webkitSpeechRecognition: any;
+  SpeechRecognition?: any;
+  webkitSpeechRecognition?: any;
 }
 
 // Initialize the speech recognition with the appropriate API
@@ -243,17 +243,23 @@ export class SpeechToTextService {
   }
 }
 
-import { SubtitleTrack } from '../../shared/schema';
+import { SubtitleTrack } from '../types';
 
 interface IWindow extends Window {
-  SpeechRecognition: any;
-  webkitSpeechRecognition: any;
+  SpeechRecognition?: any;
+  webkitSpeechRecognition?: any;
 }
 
-export class SpeechRecognitionService {
+export class SpeechRecognitionService2 {
   private recognition: any;
   private language: string = 'en-US';
   private isListening: boolean = false;
+  private currentSubtitle: SubtitleTrack = {
+    id: 999,
+    language: 'en-US',
+    label: 'Speech Recognition',
+    cues: []
+  };
 
   constructor() {
     const window = globalThis as unknown as IWindow;
@@ -274,15 +280,25 @@ export class SpeechRecognitionService {
 
     this.recognition.onresult = (event: any) => {
       const result = event.results[event.results.length - 1];
-      if (result.isFinal) {
-        console.log('Final result:', result[0].transcript);
-      }
+      const transcript = result[0].transcript;
+
+      // Update current subtitle content
+      this.currentSubtitle.cues.push({
+        id: Date.now().toString(),
+        start: 0,
+        end: 0,
+        text: transcript
+      })
     };
 
     this.recognition.onerror = (event: any) => {
       console.warn('Speech recognition error:', event.error);
       this.isListening = false;
     };
+  }
+
+  public getCurrentSubtitleTrack(): SubtitleTrack {
+    return this.currentSubtitle;
   }
 
   public start() {
@@ -309,6 +325,7 @@ export class SpeechRecognitionService {
 
   public changeLanguage(language: string) {
     this.language = language;
+    this.currentSubtitle.language = language;
     if (this.recognition) {
       this.recognition.lang = language;
       if (this.isListening) {
