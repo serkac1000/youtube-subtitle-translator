@@ -14,15 +14,23 @@ export interface Logger {
 
 // Initialize the speech recognition with the appropriate API
 const initSpeechRecognition = () => {
-  const window = globalThis as unknown as IWindow;
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  
-  if (!SpeechRecognition) {
-    console.error('Speech recognition not supported in this browser');
+  try {
+    const window = globalThis as unknown as IWindow;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      console.error('Speech recognition not supported in this browser');
+      return null;
+    }
+    
+    // Create new instance and immediately verify it works
+    const instance = new SpeechRecognition();
+    console.log('Speech recognition instance created successfully:', !!instance);
+    return instance;
+  } catch (error) {
+    console.error('Error initializing speech recognition:', error);
     return null;
   }
-  
-  return new SpeechRecognition();
 };
 
 interface SpeechToTextOptions {
@@ -154,7 +162,18 @@ export class SpeechToTextService {
   start() {
     if (!this.recognition) {
       this.log('Cannot start - speech recognition not supported', 'error');
-      return;
+      // Try to recreate the recognition instance
+      this.recognition = initSpeechRecognition();
+      if (!this.recognition) {
+        this.log('Still cannot initialize speech recognition', 'error');
+        return;
+      }
+      this.log('Successfully recreated speech recognition instance', 'success');
+      // Configure the recreated instance
+      this.recognition.lang = this.language;
+      this.recognition.continuous = true;
+      this.recognition.interimResults = true;
+      this.setupEventListeners();
     }
     
     // Only start if not already listening to prevent errors
@@ -164,37 +183,41 @@ export class SpeechToTextService {
     }
     
     try {
+      this.log('Attempting to start speech recognition...', 'info');
       this.isListening = true;
       this.startTime = Date.now();
       this.recognition.start();
-      this.log('Speech recognition started', 'info');
+      this.log('Speech recognition started successfully', 'success');
       this.setupHealthCheck();
     } catch (err) {
       this.log('Error starting speech recognition:', 'error', err);
       this.isListening = false;
       
       // Try to recover by creating a new instance
-      this.log('Attempting to recreate speech recognition instance...', 'warning');
+      this.log('Attempting to recreate speech recognition instance after error...', 'warning');
       setTimeout(() => {
-        this.recognition = initSpeechRecognition();
-        if (this.recognition) {
-          this.recognition.lang = this.language;
-          this.recognition.continuous = true;
-          this.recognition.interimResults = true;
-          this.setupEventListeners();
-          
-          try {
+        try {
+          this.recognition = initSpeechRecognition();
+          if (this.recognition) {
+            this.recognition.lang = this.language;
+            this.recognition.continuous = true;
+            this.recognition.interimResults = true;
+            this.setupEventListeners();
+            
+            this.log('Trying to start with new instance...', 'info');
             this.isListening = true;
             this.startTime = Date.now();
             this.recognition.start();
-            this.log('Speech recognition recreated and started', 'info');
+            this.log('Speech recognition recreated and started successfully', 'success');
             this.setupHealthCheck();
-          } catch (startErr) {
-            this.log('Failed to start recreated speech recognition:', 'error', startErr);
-            this.isListening = false;
+          } else {
+            this.log('Failed to recreate speech recognition instance', 'error');
           }
+        } catch (startErr) {
+          this.log('Failed to start recreated speech recognition:', 'error', startErr);
+          this.isListening = false;
         }
-      }, 500);
+      }, 1000);
     }
   }
   
