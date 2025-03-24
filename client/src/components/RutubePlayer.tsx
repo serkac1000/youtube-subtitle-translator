@@ -5,6 +5,7 @@ import DebugPanel from './DebugPanel';
 import { SubtitleTrack, VideoDetails } from '../types';
 import { parseSubtitles } from '../lib/subtitleParser';
 import { apiRequest } from '../lib/queryClient';
+import { isSpeechRecognitionSupported } from '../lib/speechRecognition';
 
 interface RutubePlayerProps {
   videoId: string;
@@ -27,6 +28,12 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSpeechToTextSupported, setIsSpeechToTextSupported] = useState(false);
+
+  // Check if speech-to-text is supported
+  useEffect(() => {
+    setIsSpeechToTextSupported(isSpeechRecognitionSupported());
+  }, []);
 
   // Load subtitles and video details
   useEffect(() => {
@@ -40,22 +47,27 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
         const videoData = await videoResponse.json();
         setVideoDetails(videoData);
         
-        // Fetch available subtitles
-        const subtitlesResponse = await apiRequest('GET', `/api/subtitles/${videoId}`, undefined);
-        const subtitlesData = await subtitlesResponse.json();
-        
-        // Parse subtitles
-        const parsedTracks = subtitlesData.map((subtitle: any) => 
-          parseSubtitles(subtitle.content, subtitle.language, subtitle.label)
-        );
-        
-        setSubtitleTracks(parsedTracks);
-        
-        // Set initial subtitle track if available
-        if (initialLanguage && parsedTracks.length > 0) {
-          const initialTrack = parsedTracks.find(track => track.language === initialLanguage);
-          if (initialTrack) {
-            setSelectedTrack(initialTrack);
+        // Fetch available subtitles only if needed
+        // If we're using speech-to-text, we might not need to fetch predefined subtitles
+        if (!isSpeechToTextSupported || initialLanguage !== 'ru') {
+          const subtitlesResponse = await apiRequest('GET', `/api/subtitles/${videoId}`, undefined);
+          const subtitlesData = await subtitlesResponse.json();
+          
+          // Parse subtitles
+          const parsedTracks = subtitlesData.map((subtitle: {
+            content: string;
+            language: string;
+            label: string;
+          }) => parseSubtitles(subtitle.content, subtitle.language, subtitle.label));
+          
+          setSubtitleTracks(parsedTracks);
+          
+          // Set initial subtitle track if available
+          if (initialLanguage && parsedTracks.length > 0 && !isSpeechToTextSupported) {
+            const initialTrack = parsedTracks.find(track => track.language === initialLanguage);
+            if (initialTrack) {
+              setSelectedTrack(initialTrack);
+            }
           }
         }
       } catch (err) {
@@ -67,19 +79,30 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
     };
 
     loadData();
-  }, [videoId, initialLanguage]);
+  }, [videoId, initialLanguage, isSpeechToTextSupported]);
   
   // Handle track change
   const handleTrackChange = (track: SubtitleTrack | null) => {
     setSelectedTrack(track);
+    
+    // If track is a speech recognition track, add it to the available tracks
+    if (track && track.id.startsWith('track-speech') && !subtitleTracks.some((t: SubtitleTrack) => t.id === track.id)) {
+      setSubtitleTracks(prev => [...prev, track]);
+    }
   };
   
   // Debug panel test functions
   const handleTestSubtitle = () => {
-    // Find Russian track and select it
-    const russianTrack = subtitleTracks.find(track => track.language === 'ru');
-    if (russianTrack) {
-      setSelectedTrack(russianTrack);
+    if (isSpeechToTextSupported) {
+      // We'll let the VideoPlayer handle speech recognition
+      // It will automatically create a speech recognition track
+      console.log('Starting speech recognition for testing');
+    } else {
+      // Find Russian track and select it
+      const russianTrack = subtitleTracks.find(track => track.language === 'ru');
+      if (russianTrack) {
+        setSelectedTrack(russianTrack);
+      }
     }
   };
   
@@ -126,9 +149,15 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
       <header className="w-full max-w-4xl mb-6 flex justify-between items-center">
         <div className="flex items-center">
           <h1 className="text-2xl font-bold text-red-600">Rutube Web</h1>
-          <span className="ml-2 text-xs bg-gray-200 px-2 py-1 rounded">Fixed Version</span>
+          <span className="ml-2 text-xs bg-gray-200 px-2 py-1 rounded">Speech-to-Text Version</span>
         </div>
         <div className="flex items-center space-x-4">
+          {isSpeechToTextSupported && (
+            <div className="text-green-600 flex items-center mr-4">
+              <span className="material-icons text-sm mr-1">mic</span>
+              <span className="text-xs">Speech Recognition Available</span>
+            </div>
+          )}
           <button className="text-gray-700 hover:text-red-600">
             <span className="material-icons">help_outline</span>
           </button>
@@ -169,6 +198,19 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
             onToggleDebug={handleToggleDebug}
             onCheckEncoding={handleCheckEncoding}
           />
+
+          {!isSpeechToTextSupported && (
+            <div className="w-full max-w-4xl mt-4 bg-yellow-50 p-4 rounded shadow text-yellow-700">
+              <h3 className="font-bold flex items-center">
+                <span className="material-icons mr-2">warning</span>
+                Speech Recognition Not Available
+              </h3>
+              <p className="mt-2">
+                Your browser does not support the Web Speech API needed for speech-to-text subtitle generation.
+                Please use Google Chrome, Microsoft Edge, or another compatible browser for this feature.
+              </p>
+            </div>
+          )}
         </>
       )}
     </div>

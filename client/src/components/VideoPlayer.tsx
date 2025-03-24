@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SubtitleTrack, SubtitleCue, PlayerState } from '../types';
 import { formatTime } from '../lib/timeUtils';
+import { SpeechToTextService, isSpeechRecognitionSupported } from '../lib/speechRecognition';
 
 interface VideoPlayerProps {
   videoId: string;
@@ -25,11 +26,85 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [useSpeechRecognition, setUseSpeechRecognition] = useState(true);
+  const [speechToTextEnabled, setSpeechToTextEnabled] = useState(false);
+  const [currentLanguage, setCurrentLanguage] = useState('ru-RU');
+  const [isSTTSupported, setIsSTTSupported] = useState(false);
   
   // Refs
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLDivElement>(null);
   const progressInterval = useRef<number | null>(null);
+  const speechToTextService = useRef<SpeechToTextService | null>(null);
+  
+  // Check if speech recognition is supported
+  useEffect(() => {
+    setIsSTTSupported(isSpeechRecognitionSupported());
+  }, []);
+  
+  // Initialize speech recognition service
+  useEffect(() => {
+    if (!isSTTSupported) return;
+    
+    // Initialize the speech-to-text service
+    speechToTextService.current = new SpeechToTextService(
+      { language: currentLanguage, continuous: true, interimResults: true },
+      (transcript, cues) => {
+        // Update the current subtitle with the latest transcript
+        if (speechToTextEnabled) {
+          setCurrentSubtitle(transcript);
+          
+          // If we have a newly generated track, update it
+          if (selectedTrack && selectedTrack.id.startsWith('track-speech')) {
+            const updatedTrack: SubtitleTrack = {
+              ...selectedTrack,
+              cues: [...cues]
+            };
+            onTrackChange(updatedTrack);
+          }
+        }
+      }
+    );
+    
+    return () => {
+      // Cleanup speech recognition
+      if (speechToTextService.current) {
+        speechToTextService.current.stop();
+      }
+    };
+  }, [isSTTSupported, currentLanguage]);
+  
+  // Handle speech recognition based on player state
+  useEffect(() => {
+    if (!speechToTextService.current || !isSTTSupported || !useSpeechRecognition) return;
+    
+    if (playerState === 'playing' && !speechToTextEnabled) {
+      setSpeechToTextEnabled(true);
+      speechToTextService.current.start();
+      
+      // Create a new subtitle track for speech recognition
+      const speechTrack: SubtitleTrack = speechToTextService.current.getCurrentSubtitleTrack();
+      onTrackChange(speechTrack);
+      
+    } else if (playerState !== 'playing' && speechToTextEnabled) {
+      setSpeechToTextEnabled(false);
+      speechToTextService.current.stop();
+    }
+  }, [playerState, useSpeechRecognition]);
+  
+  // Change speech recognition language
+  const changeSpeechRecognitionLanguage = (language: string) => {
+    if (!speechToTextService.current) return;
+    
+    setCurrentLanguage(language);
+    speechToTextService.current.changeLanguage(language);
+    
+    // Update the track
+    if (speechToTextEnabled) {
+      const updatedTrack = speechToTextService.current.getCurrentSubtitleTrack();
+      onTrackChange(updatedTrack);
+    }
+  };
   
   // Load YouTube API
   useEffect(() => {
@@ -63,7 +138,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         iv_load_policy: 3,
         modestbranding: 1,
         rel: 0,
-        showinfo: 0
+        showinfo: 0,
+        cc_load_policy: 0, // Disable YouTube's built-in captions
+        cc_lang_pref: 'ru' // Set default subtitle language if needed
       },
       events: {
         onReady: onPlayerReady,
@@ -118,16 +195,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           setProgress((currentTime / duration) * 100);
         }
         
-        // Update current subtitle
-        updateCurrentSubtitle(currentTime);
+        // Update current subtitle only if not using speech recognition
+        if (!speechToTextEnabled) {
+          updateCurrentSubtitle(currentTime);
+        }
       }
     }, 100); // Update every 100ms for smoother progress
   };
   
   // Update current subtitle based on current time
   const updateCurrentSubtitle = (time: number) => {
-    if (!selectedTrack) {
-      setCurrentSubtitle('');
+    if (!selectedTrack || speechToTextEnabled) {
       return;
     }
     
@@ -203,6 +281,34 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
   
+  // Toggle speech recognition
+  const toggleSpeechRecognition = () => {
+    if (!isSTTSupported) return;
+    
+    setUseSpeechRecognition(!useSpeechRecognition);
+    
+    if (!useSpeechRecognition) {
+      // Starting speech recognition
+      if (playerState === 'playing' && speechToTextService.current) {
+        setSpeechToTextEnabled(true);
+        speechToTextService.current.start();
+        
+        // Create a new subtitle track for speech recognition
+        const speechTrack = speechToTextService.current.getCurrentSubtitleTrack();
+        onTrackChange(speechTrack);
+      }
+    } else {
+      // Stopping speech recognition
+      if (speechToTextService.current) {
+        setSpeechToTextEnabled(false);
+        speechToTextService.current.stop();
+        
+        // Clear the current subtitle
+        setCurrentSubtitle('');
+      }
+    }
+  };
+  
   // Listen for fullscreen changes
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -246,7 +352,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             {currentSubtitle && (
               <p
                 id="subtitle-text"
-                className="inline-block bg-black bg-opacity-60 text-white px-3 py-1 rounded text-lg max-w-lg mx-auto"
+                className={`inline-block bg-black bg-opacity-60 text-white px-3 py-1 rounded text-lg max-w-lg mx-auto ${speechToTextEnabled ? 'border border-red-500' : ''}`}
               >
                 {currentSubtitle}
               </p>
@@ -318,6 +424,20 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               </div>
               
               <div className="flex items-center">
+                {/* Speech-to-Text Button (new) */}
+                {isSTTSupported && (
+                  <div className="relative mr-4" id="speech-recognition-control">
+                    <button
+                      id="speech-recognition-btn"
+                      className={`text-white focus:outline-none ${speechToTextEnabled ? 'bg-red-600' : ''} bg-opacity-70 rounded p-1`}
+                      onClick={toggleSpeechRecognition}
+                      title={speechToTextEnabled ? "Disable speech recognition" : "Enable speech recognition"}
+                    >
+                      <span className="material-icons text-xl">mic</span>
+                    </button>
+                  </div>
+                )}
+                
                 {/* Subtitles Control Component */}
                 <div className="relative mr-4 group" id="subtitle-control">
                   <button
@@ -335,7 +455,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     <ul className="space-y-1">
                       <li
                         className="flex items-center px-2 py-1 hover:bg-gray-700 rounded cursor-pointer"
-                        onClick={() => onTrackChange(null)}
+                        onClick={() => {
+                          onTrackChange(null);
+                          setUseSpeechRecognition(false);
+                          setSpeechToTextEnabled(false);
+                          if (speechToTextService.current) {
+                            speechToTextService.current.stop();
+                          }
+                        }}
                       >
                         <span className="material-icons text-sm mr-2">
                           {!selectedTrack ? 'radio_button_checked' : 'radio_button_unchecked'}
@@ -343,35 +470,100 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         <span className="text-sm">Off</span>
                       </li>
                       
+                      {/* Speech-to-Text options */}
+                      {isSTTSupported && (
+                        <>
+                          <li className="px-2 py-1 border-t border-gray-700 mt-1 mb-1">
+                            <span className="text-xs text-gray-400">Speech Recognition</span>
+                          </li>
+                          <li
+                            className={`flex items-center px-2 py-1 ${
+                              speechToTextEnabled && currentLanguage === 'ru-RU' ? 'bg-gray-700' : 'hover:bg-gray-700'
+                            } rounded cursor-pointer`}
+                            onClick={() => {
+                              setUseSpeechRecognition(true);
+                              changeSpeechRecognitionLanguage('ru-RU');
+                              if (playerState === 'playing') {
+                                setSpeechToTextEnabled(true);
+                                if (speechToTextService.current) {
+                                  speechToTextService.current.start();
+                                  const track = speechToTextService.current.getCurrentSubtitleTrack();
+                                  onTrackChange(track);
+                                }
+                              }
+                            }}
+                          >
+                            <span className={`material-icons text-sm mr-2 ${
+                              speechToTextEnabled && currentLanguage === 'ru-RU' ? 'text-red-500' : ''
+                            }`}>
+                              {speechToTextEnabled && currentLanguage === 'ru-RU'
+                                ? 'radio_button_checked'
+                                : 'radio_button_unchecked'}
+                            </span>
+                            <span className="text-sm">Russian (Speech)</span>
+                          </li>
+                          <li
+                            className={`flex items-center px-2 py-1 ${
+                              speechToTextEnabled && currentLanguage === 'en-US' ? 'bg-gray-700' : 'hover:bg-gray-700'
+                            } rounded cursor-pointer`}
+                            onClick={() => {
+                              setUseSpeechRecognition(true);
+                              changeSpeechRecognitionLanguage('en-US');
+                              if (playerState === 'playing') {
+                                setSpeechToTextEnabled(true);
+                                if (speechToTextService.current) {
+                                  speechToTextService.current.start();
+                                  const track = speechToTextService.current.getCurrentSubtitleTrack();
+                                  onTrackChange(track);
+                                }
+                              }
+                            }}
+                          >
+                            <span className={`material-icons text-sm mr-2 ${
+                              speechToTextEnabled && currentLanguage === 'en-US' ? 'text-red-500' : ''
+                            }`}>
+                              {speechToTextEnabled && currentLanguage === 'en-US'
+                                ? 'radio_button_checked'
+                                : 'radio_button_unchecked'}
+                            </span>
+                            <span className="text-sm">English (Speech)</span>
+                          </li>
+                        </>
+                      )}
+                      
+                      {/* Regular subtitle tracks */}
+                      {subtitleTracks.length > 0 && (
+                        <li className="px-2 py-1 border-t border-gray-700 mt-1 mb-1">
+                          <span className="text-xs text-gray-400">Loaded Subtitles</span>
+                        </li>
+                      )}
+                      
                       {subtitleTracks.map(track => (
                         <li
                           key={track.id}
                           className={`flex items-center px-2 py-1 ${
-                            selectedTrack?.id === track.id ? 'bg-gray-700' : 'hover:bg-gray-700'
+                            selectedTrack?.id === track.id && !speechToTextEnabled ? 'bg-gray-700' : 'hover:bg-gray-700'
                           } rounded cursor-pointer`}
-                          onClick={() => onTrackChange(track)}
+                          onClick={() => {
+                            onTrackChange(track);
+                            setUseSpeechRecognition(false);
+                            setSpeechToTextEnabled(false);
+                            if (speechToTextService.current) {
+                              speechToTextService.current.stop();
+                            }
+                          }}
                         >
-                          <span className="material-icons text-sm mr-2 text-red-500">
-                            {selectedTrack?.id === track.id
+                          <span className={`material-icons text-sm mr-2 ${
+                            selectedTrack?.id === track.id && !speechToTextEnabled ? 'text-red-500' : ''
+                          }`}>
+                            {selectedTrack?.id === track.id && !speechToTextEnabled
                               ? 'radio_button_checked'
                               : 'radio_button_unchecked'}
                           </span>
                           <span className="text-sm">{track.label}</span>
                         </li>
                       ))}
-                      
-                      <li className="flex items-center px-2 py-1 hover:bg-gray-700 rounded cursor-pointer">
-                        <span className="material-icons text-sm mr-2">
-                          radio_button_unchecked
-                        </span>
-                        <span className="text-sm">Auto-translate</span>
-                      </li>
                     </ul>
-                    <div className="mt-2 pt-1 border-t border-gray-700">
-                      <div className="text-sm text-gray-400 hover:text-white px-2 py-1 hover:bg-gray-700 rounded cursor-pointer">
-                        Options
-                      </div>
-                    </div>
                   </div>
                 </div>
 

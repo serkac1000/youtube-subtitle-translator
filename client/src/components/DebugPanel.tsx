@@ -1,5 +1,6 @@
 import React from 'react';
 import { SubtitleTrack } from '../types';
+import { isSpeechRecognitionSupported } from '../lib/speechRecognition';
 
 interface DebugPanelProps {
   selectedTrack: SubtitleTrack | null;
@@ -16,6 +17,9 @@ const DebugPanel: React.FC<DebugPanelProps> = ({
   onToggleDebug,
   onCheckEncoding
 }) => {
+  const isSpeechToTextSupported = isSpeechRecognitionSupported();
+  const isSpeechTrack = selectedTrack?.id.startsWith('track-speech');
+  
   return (
     <div className="w-full max-w-4xl mt-8 bg-white rounded-lg shadow p-4">
       <h3 className="text-lg font-semibold mb-3 flex items-center">
@@ -28,14 +32,19 @@ const DebugPanel: React.FC<DebugPanelProps> = ({
         <div className="bg-gray-100 p-3 rounded text-sm font-mono">
           <div className="flex justify-between mb-2">
             <span className="text-gray-700">Current Subtitle Track:</span>
-            <span className="text-accent font-semibold">
+            <span className={`font-semibold ${isSpeechTrack ? 'text-red-600' : 'text-accent'}`}>
               {selectedTrack ? `${selectedTrack.label} (${selectedTrack.language})` : 'Off'}
+              {isSpeechTrack && ' [Speech Recognition]'}
             </span>
           </div>
           <div className="flex justify-between mb-2">
             <span className="text-gray-700">Subtitle Status:</span>
             <span className="text-green-600 font-semibold">
-              {selectedTrack ? 'Loaded Successfully' : 'No Track Selected'}
+              {selectedTrack 
+                ? isSpeechTrack 
+                  ? 'Speech Recognition Active' 
+                  : 'Loaded Successfully' 
+                : 'No Track Selected'}
             </span>
           </div>
           <div className="flex justify-between mb-2">
@@ -50,26 +59,47 @@ const DebugPanel: React.FC<DebugPanelProps> = ({
       </div>
       
       <div className="mb-4">
-        <div className="text-sm font-medium mb-2">Fix Applied</div>
+        <div className="text-sm font-medium mb-2">
+          {isSpeechToTextSupported ? 'Speech Recognition Feature' : 'Fix Applied'}
+        </div>
         <div className="bg-gray-100 p-3 rounded text-sm">
-          <p className="mb-2">The issue with Russian subtitles was fixed by:</p>
-          <ol className="list-decimal pl-5 space-y-1">
-            <li>Correcting the character encoding handling for Cyrillic characters</li>
-            <li>Ensuring proper subtitle file parsing for the .vtt/.srt format</li>
-            <li>Fixing the subtitle display timing synchronization</li>
-            <li>Properly rendering UTF-8 encoded text in the subtitle overlay</li>
-          </ol>
+          {isSpeechToTextSupported ? (
+            <>
+              <p className="mb-2">This player now supports speech-to-text subtitle generation:</p>
+              <ol className="list-decimal pl-5 space-y-1">
+                <li>Real-time speech recognition using the Web Speech API</li>
+                <li>Support for different languages including Russian and English</li>
+                <li>Live subtitle generation from video audio</li>
+                <li>Proper UTF-8 encoding for all languages including Cyrillic</li>
+                <li>Synchronized subtitle display with video playback</li>
+              </ol>
+              <p className="mt-2 text-xs text-gray-600">
+                Note: Speech recognition accuracy depends on your browser, microphone, and background noise.
+                For best results, use in a quiet environment.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mb-2">The issue with Russian subtitles was fixed by:</p>
+              <ol className="list-decimal pl-5 space-y-1">
+                <li>Correcting the character encoding handling for Cyrillic characters</li>
+                <li>Ensuring proper subtitle file parsing for the .vtt/.srt format</li>
+                <li>Fixing the subtitle display timing synchronization</li>
+                <li>Properly rendering UTF-8 encoded text in the subtitle overlay</li>
+              </ol>
+            </>
+          )}
         </div>
       </div>
       
       <div>
-        <div className="text-sm font-medium mb-2">Manual Testing</div>
+        <div className="text-sm font-medium mb-2">Controls</div>
         <div className="flex flex-wrap">
           <button 
             className="bg-red-600 text-white px-3 py-1 rounded text-sm mr-2 mb-2 hover:bg-red-700"
             onClick={onTestSubtitle}
           >
-            Test Russian Subtitles
+            {isSpeechToTextSupported ? 'Test Speech Recognition' : 'Test Russian Subtitles'}
           </button>
           <button 
             className="bg-gray-700 text-white px-3 py-1 rounded text-sm mr-2 mb-2 hover:bg-gray-800"
@@ -90,6 +120,14 @@ const DebugPanel: React.FC<DebugPanelProps> = ({
             Check Encoding
           </button>
         </div>
+        {isSpeechToTextSupported && (
+          <div className="mt-3 text-sm text-gray-600">
+            <p className="flex items-center">
+              <span className="material-icons text-green-600 mr-1 text-sm">info</span>
+              To use speech recognition: Click the microphone icon in the player controls or select a Speech option from the subtitle menu.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
