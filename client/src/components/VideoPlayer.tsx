@@ -254,15 +254,25 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   
   // Update current subtitle based on current time
   const updateCurrentSubtitle = (time: number) => {
+    // If speech recognition is enabled, skip this update as speech recognition handles subtitles
     if (!selectedTrack || speechToTextEnabled) {
       return;
     }
     
+    // Find any cue that should be active at the current time
     const activeCue = selectedTrack.cues.find(
       cue => time >= cue.start && time <= cue.end
     );
     
+    // Set the current subtitle text (empty string if no active cue found)
+    // For Russian subtitles, ensure we're showing the text directly 
+    // without any additional encoding/decoding
     setCurrentSubtitle(activeCue ? activeCue.text : '');
+    
+    // Debug log to help troubleshoot subtitle timing issues
+    if (activeCue && activeCue.text.match(/[а-яА-Я]/)) {
+      console.debug('Showing Russian subtitle at time:', time, 'Text:', activeCue.text);
+    }
   };
   
   // Play/pause toggle

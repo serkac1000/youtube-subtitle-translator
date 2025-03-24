@@ -103,7 +103,10 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
       // Find Russian track and select it
       const russianTrack = subtitleTracks.find(track => track.language === 'ru');
       if (russianTrack) {
+        console.log('Using loaded Russian subtitle track:', russianTrack);
         setSelectedTrack(russianTrack);
+      } else {
+        console.warn('No Russian subtitle track found in:', subtitleTracks);
       }
     }
   };

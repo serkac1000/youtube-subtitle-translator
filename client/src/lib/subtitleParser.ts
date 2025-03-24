@@ -59,8 +59,26 @@ export function parseSubtitles(content: string, language: string, label: string)
     let text = textLines.join("\n")
       // Remove HTML tags
       .replace(/<[^>]*>/g, "")
-      // Ensure UTF-8 encoding is preserved for Cyrillic characters
-      .replace(/&#(\d+);/g, (_, charCode) => String.fromCharCode(charCode));
+      // Handle HTML character entities (both numeric and named)
+      .replace(/&#(\d+);/g, (_, charCode) => String.fromCharCode(parseInt(charCode)))
+      .replace(/&#x([0-9a-f]+);/gi, (_, charCode) => String.fromCharCode(parseInt(charCode, 16)))
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, "\"")
+      .replace(/&apos;/g, "'");
+    
+    // Decode URI components if they appear encoded (helps with some Cyrillic issues)
+    try {
+      // Only try to decode if it actually contains percent encoding
+      if (text.includes('%')) {
+        const decodedText = decodeURIComponent(text);
+        text = decodedText;
+      }
+    } catch (e) {
+      // If decoding fails, keep the original text
+      console.warn("Failed to decode subtitle text:", e);
+    }
     
     cues.push({
       id: `cue-${index}`,
