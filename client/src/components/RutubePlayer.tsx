@@ -2,22 +2,24 @@ import React, { useState, useEffect } from 'react';
 import VideoPlayer from './VideoPlayer';
 import VideoInfo from './VideoInfo';
 import DebugPanel from './DebugPanel';
+import VideoUrlInput from './VideoUrlInput';
 import { SubtitleTrack, VideoDetails } from '../types';
 import { parseSubtitles } from '../lib/subtitleParser';
 import { apiRequest } from '../lib/queryClient';
 import { isSpeechRecognitionSupported } from '../lib/speechRecognition';
 
 interface RutubePlayerProps {
-  videoId: string;
+  videoId?: string;
   initialLanguage?: string;
   autoplay?: boolean;
 }
 
 const RutubePlayer: React.FC<RutubePlayerProps> = ({
-  videoId,
+  videoId: initialVideoId = 'dQw4w9WgXcQ',
   initialLanguage = 'ru',
   autoplay = false
 }) => {
+  const [videoId, setVideoId] = useState(initialVideoId);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<SubtitleTrack | null>(null);
   const [videoDetails, setVideoDetails] = useState<VideoDetails>({
@@ -144,6 +146,18 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
     console.log('Encoding check: Cyrillic characters should display correctly: абвгдеёжзийклмнопрстуфхцчшщъыьэюя');
   };
 
+  // Handle video ID change from the input
+  const handleVideoIdChange = (newVideoId: string) => {
+    if (newVideoId !== videoId) {
+      // Reset state related to the current video
+      setSelectedTrack(null);
+      setSubtitleTracks([]);
+      
+      // Update the video ID
+      setVideoId(newVideoId);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center py-8 px-4">
       <header className="w-full max-w-4xl mb-6 flex justify-between items-center">
@@ -166,6 +180,12 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
           </button>
         </div>
       </header>
+
+      {/* Video URL Input */}
+      <VideoUrlInput 
+        onVideoIdChange={handleVideoIdChange}
+        currentVideoId={videoId}
+      />
 
       {isLoading ? (
         <div className="w-full max-w-4xl bg-white p-12 rounded shadow flex justify-center items-center">

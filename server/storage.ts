@@ -92,7 +92,34 @@ export class MemStorage implements IStorage {
   }
   
   async getVideo(videoId: string): Promise<Video | undefined> {
-    return this.videos.get(videoId);
+    // Try to get the video from our database
+    const video = this.videos.get(videoId);
+    
+    // If the video exists, return it
+    if (video) {
+      return video;
+    }
+    
+    // If the video doesn't exist but the videoId seems valid, create a basic entry
+    if (videoId && videoId.length === 11) {
+      // Create a basic video details object
+      const newVideo: Video = {
+        id: this.currentVideoId++,
+        videoId: videoId,
+        title: `YouTube Video (${videoId})`,
+        thumbnailUrl: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+        viewCount: 0,
+        uploadDate: new Date().toLocaleDateString()
+      };
+      
+      // Store it for future use
+      this.videos.set(videoId, newVideo);
+      
+      return newVideo;
+    }
+    
+    // If the videoId is invalid, return undefined
+    return undefined;
   }
   
   async createVideo(insertVideo: InsertVideo): Promise<Video> {
