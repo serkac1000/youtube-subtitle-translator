@@ -137,17 +137,34 @@ export class SpeechToTextService {
     
     this.recognition.onerror = (event: any) => {
       this.log(`Speech recognition error: ${event.error}`, 'error', event);
-      if (event.error === 'no-speech') {
+      
+      // Dispatch an event when network error occurs
+      if (event.error === 'network') {
+        this.log('Network error in speech recognition, attempting to recover', 'error');
+        
+        // Dispatch a custom event that the main app can listen for
+        const networkErrorEvent = new CustomEvent('speech-recognition-network-error', {
+          detail: { timestamp: Date.now() }
+        });
+        window.dispatchEvent(networkErrorEvent);
+        
+        this.forceRestart();
+      } 
+      else if (event.error === 'no-speech') {
         // Restart if no speech was detected
         this.log('No speech detected, restarting recognition', 'warning');
         this.restart();
-      } else if (event.error === 'network') {
-        this.log('Network error in speech recognition, attempting to recover', 'error');
-        this.forceRestart();
       } else if (event.error === 'aborted') {
         this.log('Speech recognition aborted', 'warning');
       } else {
         this.log(`Unhandled speech recognition error: ${event.error}`, 'error');
+        
+        // Dispatch a generic error event
+        const errorEvent = new CustomEvent('speech-recognition-error', {
+          detail: { error: event.error, timestamp: Date.now() }
+        });
+        window.dispatchEvent(errorEvent);
+        
         this.forceRestart();
       }
     };

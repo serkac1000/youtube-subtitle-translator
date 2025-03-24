@@ -18,6 +18,19 @@ export default function Home() {
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [isSupported, setIsSupported] = useState(true);
   const [activeTab, setActiveTab] = useState('debug');
+  const [networkError, setNetworkError] = useState(false);
+  const [errorCount, setErrorCount] = useState(0);
+  // Fallback subtitles when speech recognition fails
+  const [useFallbackSubtitles, setUseFallbackSubtitles] = useState(false);
+  
+  // Predefined fallback subtitles - these will show when speech recognition fails
+  const fallbackSubtitles = [
+    { time: 2, text: "Speech recognition is not working in this environment." },
+    { time: 5, text: "This is a fallback message to show that subtitles should appear here." },
+    { time: 10, text: "You can try refreshing the page or using a different browser." },
+    { time: 15, text: "The Debug Console shows detailed logs about the speech recognition status." },
+    { time: 20, text: "In production, this would use uploaded subtitle files instead." },
+  ];
   
   const speechToTextRef = useRef<SpeechToTextService | null>(null);
   const logger = DebugLogger.getInstance();
@@ -47,14 +60,76 @@ export default function Home() {
       setIsSupported(false);
     }
     
+    // Setup event listeners for network errors
+    const handleNetworkError = () => {
+      logger.log('Network error detected in speech recognition', 'error');
+      setNetworkError(true);
+      setErrorCount(prev => prev + 1);
+    };
+    
+    const handleSpeechError = (e: any) => {
+      logger.log(`Speech recognition error detected: ${e.detail?.error || 'unknown'}`, 'error');
+      setErrorCount(prev => prev + 1);
+    };
+    
+    window.addEventListener('speech-recognition-network-error', handleNetworkError);
+    window.addEventListener('speech-recognition-error', handleSpeechError);
+    
     // Cleanup on unmount
     return () => {
       if (speechToTextRef.current) {
         logger.log('Stopping speech recognition service', 'info');
         speechToTextRef.current.stop();
       }
+      window.removeEventListener('speech-recognition-network-error', handleNetworkError);
+      window.removeEventListener('speech-recognition-error', handleSpeechError);
     };
   }, []);
+  
+  // Handle fallback subtitles display
+  useEffect(() => {
+    if (!useFallbackSubtitles) return;
+    
+    let currentIndex = 0;
+    let subtitleInterval: number | null = null;
+    
+    const showFallbackSubtitles = () => {
+      if (currentIndex >= fallbackSubtitles.length) {
+        // Loop back to beginning
+        currentIndex = 0;
+      }
+      
+      const subtitle = fallbackSubtitles[currentIndex];
+      setCurrentSubtitle(subtitle.text);
+      logger.log(`Displaying fallback subtitle: "${subtitle.text}"`, 'info');
+      currentIndex++;
+      
+      // Convert subtitle timestamps to delays
+      const nextSubtitleDelay = currentIndex < fallbackSubtitles.length 
+        ? (fallbackSubtitles[currentIndex].time - subtitle.time) * 1000
+        : 5000; // Default 5s delay if we're at the end
+      
+      subtitleInterval = window.setTimeout(showFallbackSubtitles, nextSubtitleDelay);
+    };
+    
+    // Start showing subtitles
+    logger.log('Starting fallback subtitle display', 'info');
+    showFallbackSubtitles();
+    
+    // Cleanup
+    return () => {
+      if (subtitleInterval) {
+        clearTimeout(subtitleInterval);
+      }
+      
+      // Only clear subtitle if we're disabling fallback mode
+      if (!useFallbackSubtitles) {
+        setCurrentSubtitle(null);
+      }
+      
+      logger.log('Stopped fallback subtitle display', 'info');
+    };
+  }, [useFallbackSubtitles]);
   
   // Handle starting speech recognition
   const handleStartRecognition = () => {
@@ -161,6 +236,37 @@ export default function Home() {
       
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Network error alert */}
+        {networkError && (
+          <Alert variant="destructive" className="mx-4 mt-2 mb-0 bg-red-900 border-red-800 text-white">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Speech Recognition Error</AlertTitle>
+            <AlertDescription className="flex flex-col">
+              <div>
+                Network error occurred while trying to access speech recognition. This is common when using the app in sandboxed environments.
+                The app will try to recover automatically. You can manually click "Restart Recognition" if subtitles don't appear.
+              </div>
+              
+              {errorCount > 5 && (
+                <div className="mt-2">
+                  <p className="font-semibold mb-2">
+                    Multiple errors detected. Speech recognition may not work properly in this environment.
+                  </p>
+                  <button 
+                    onClick={() => {
+                      setUseFallbackSubtitles(!useFallbackSubtitles);
+                      logger.log(`${useFallbackSubtitles ? 'Disabled' : 'Enabled'} fallback subtitle mode`, 'info');
+                    }}
+                    className={`px-3 py-1 rounded text-white text-sm ${useFallbackSubtitles ? 'bg-green-700' : 'bg-blue-700'}`}
+                  >
+                    {useFallbackSubtitles ? 'Disable Fallback Mode' : 'Enable Fallback Mode'}
+                  </button>
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+        
         {/* Video player */}
         <VideoPlayer 
           youtubeUrl={youtubeUrl} 
