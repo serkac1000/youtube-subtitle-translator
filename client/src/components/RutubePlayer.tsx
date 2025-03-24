@@ -49,27 +49,41 @@ const RutubePlayer: React.FC<RutubePlayerProps> = ({
         const videoData = await videoResponse.json();
         setVideoDetails(videoData);
         
-        // Fetch available subtitles only if needed
-        // If we're using speech-to-text, we might not need to fetch predefined subtitles
-        if (!isSpeechToTextSupported || initialLanguage !== 'ru') {
-          const subtitlesResponse = await apiRequest('GET', `/api/subtitles/${videoId}`, undefined);
-          const subtitlesData = await subtitlesResponse.json();
+        // Always fetch available subtitles as a fallback option
+        // Even if speech-to-text is available, we should still provide subtitle options
+        const subtitlesResponse = await apiRequest('GET', `/api/subtitles/${videoId}`, undefined);
+        const subtitlesData = await subtitlesResponse.json();
+        
+        // Parse subtitles
+        const parsedTracks = subtitlesData.map((subtitle: {
+          content: string;
+          language: string;
+          label: string;
+        }) => {
+          console.log(`Parsing subtitle: language=${subtitle.language}, label=${subtitle.label}`);
+          const track = parseSubtitles(subtitle.content, subtitle.language, subtitle.label);
           
-          // Parse subtitles
-          const parsedTracks = subtitlesData.map((subtitle: {
-            content: string;
-            language: string;
-            label: string;
-          }) => parseSubtitles(subtitle.content, subtitle.language, subtitle.label));
+          // Debug: Log the first few cues to verify content
+          if (track.cues.length > 0) {
+            console.log(`Parsed ${track.cues.length} cues for ${subtitle.language}`);
+            console.log('Sample cue:', track.cues[0]);
+          } else {
+            console.warn(`No cues parsed for ${subtitle.language} subtitle`);
+          }
           
-          setSubtitleTracks(parsedTracks);
-          
-          // Set initial subtitle track if available
-          if (initialLanguage && parsedTracks.length > 0 && !isSpeechToTextSupported) {
-            const initialTrack = parsedTracks.find(track => track.language === initialLanguage);
-            if (initialTrack) {
-              setSelectedTrack(initialTrack);
-            }
+          return track;
+        });
+        
+        setSubtitleTracks(parsedTracks);
+        
+        // Set initial subtitle track if available
+        if (initialLanguage && parsedTracks.length > 0 && !isSpeechToTextSupported) {
+          const initialTrack = parsedTracks.find(track => track.language === initialLanguage);
+          if (initialTrack) {
+            console.log(`Setting initial ${initialLanguage} subtitle track:`, initialTrack);
+            setSelectedTrack(initialTrack);
+          } else {
+            console.warn(`No subtitle track found for language ${initialLanguage}`);
           }
         }
       } catch (err) {

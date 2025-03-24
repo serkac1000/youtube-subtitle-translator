@@ -68,16 +68,42 @@ export function parseSubtitles(content: string, language: string, label: string)
       .replace(/&quot;/g, "\"")
       .replace(/&apos;/g, "'");
     
-    // Decode URI components if they appear encoded (helps with some Cyrillic issues)
-    try {
-      // Only try to decode if it actually contains percent encoding
-      if (text.includes('%')) {
-        const decodedText = decodeURIComponent(text);
-        text = decodedText;
+    // Additional handling for Cyrillic text
+    if (language === 'ru') {
+      console.log('Processing Russian subtitle text:', text);
+      
+      // Decode URI components if they appear encoded (helps with some Cyrillic issues)
+      try {
+        // Only try to decode if it actually contains percent encoding
+        if (text.includes('%')) {
+          const decodedText = decodeURIComponent(text);
+          text = decodedText;
+          console.log('Decoded from URI encoding:', text);
+        }
+      } catch (e) {
+        // If decoding fails, keep the original text
+        console.warn("Failed to decode subtitle text:", e);
       }
-    } catch (e) {
-      // If decoding fails, keep the original text
-      console.warn("Failed to decode subtitle text:", e);
+      
+      // Check for common Cyrillic encoding issues
+      if (!/[а-яА-ЯёЁ]/.test(text) && /\\u/.test(text)) {
+        try {
+          // Handle JavaScript unicode escapes
+          text = text.replace(/\\u([0-9a-f]{4})/gi, (_, code) => 
+            String.fromCodePoint(parseInt(code, 16))
+          );
+          console.log('Decoded from Unicode escapes:', text);
+        } catch (e) {
+          console.warn("Failed to decode Unicode escapes:", e);
+        }
+      }
+      
+      // Final check to see if we have Cyrillic characters
+      if (!/[а-яА-ЯёЁ]/.test(text)) {
+        console.warn('Warning: Russian subtitle still does not contain Cyrillic characters after processing:', text);
+      } else {
+        console.log('Successfully processed Russian text with Cyrillic characters:', text);
+      }
     }
     
     cues.push({
