@@ -243,7 +243,69 @@ export class SpeechToTextService {
   }
 }
 
-// Helper function to check if speech recognition is supported in this browser
+const MAX_RETRIES = 3;
+const BACKOFF_DELAY = 1000;
+
+export class SpeechRecognitionService {
+  private recognition: any;
+  private retryCount: number = 0;
+  private isInFallbackMode: boolean = false;
+
+  constructor() {
+    const window = globalThis as unknown as IWindow;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      this.recognition = new SpeechRecognition();
+      this.setupRecognition();
+    }
+  }
+
+  private setupRecognition() {
+    this.recognition.continuous = true;
+    this.recognition.interimResults = true;
+
+    this.recognition.onerror = (event: any) => {
+      console.warn("Speech recognition error", event.error);
+      if (["network", "aborted"].includes(event.error) && this.retryCount < MAX_RETRIES) {
+        this.retryWithBackoff();
+      } else {
+        this.enableFallbackMode();
+      }
+    };
+  }
+
+  private retryWithBackoff() {
+    this.retryCount++;
+    setTimeout(() => {
+      if (!this.isInFallbackMode) {
+        this.start();
+      }
+    }, BACKOFF_DELAY * this.retryCount);
+  }
+
+  private enableFallbackMode() {
+    this.isInFallbackMode = true;
+    // Implement fallback subtitle display logic here
+  }
+
+  public start() {
+    if (this.recognition && !this.isInFallbackMode) {
+      try {
+        this.recognition.start();
+      } catch (err) {
+        console.error("Failed to start speech recognition:", err);
+        this.enableFallbackMode();
+      }
+    }
+  }
+
+  public stop() {
+    if (this.recognition) {
+      this.recognition.stop();
+    }
+  }
+}
+
 export function isSpeechRecognitionSupported(): boolean {
   const window = globalThis as unknown as IWindow;
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
