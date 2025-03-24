@@ -17,12 +17,23 @@ const initSpeechRecognition = () => {
   try {
     // First check if the browser is in a context that supports speech recognition
     // This helps with sandboxed environments like iframes
-    if (typeof navigator === 'undefined' || 
-        !navigator || 
-        !navigator.mediaDevices || 
-        typeof navigator.mediaDevices.getUserMedia !== 'function') {
-      console.error('Browser environment does not support media devices needed for speech recognition');
+    if (typeof navigator === 'undefined' || !navigator) {
+      console.error('Browser environment not properly initialized');
       return null;
+    }
+    
+    // Try to bypass some browser restrictions by attempting direct access
+    try {
+      // Request microphone permissions first to enhance chance of success
+      navigator.permissions?.query({ name: 'microphone' as PermissionName })
+        .then(result => {
+          console.log('Microphone permission:', result.state);
+        })
+        .catch(err => {
+          console.log('Failed to query microphone permission:', err);
+        });
+    } catch (permError) {
+      console.log('Permission API not supported:', permError);
     }
     
     const browserWindow = globalThis as unknown as IWindow;
@@ -33,8 +44,12 @@ const initSpeechRecognition = () => {
       return null;
     }
     
-    // Create new instance and immediately verify it works
+    // Create new instance with optimized settings for restricted environments
     const instance = new SpeechRecognition();
+    
+    // Configure for better stability in restricted environments
+    instance.maxAlternatives = 1;
+    instance.interimResults = true;
     
     // Test that the instance has the expected properties and methods
     if (!instance || 
@@ -329,6 +344,12 @@ export class SpeechToTextService {
     if (this.recognitionRestartAttempts > this.maxRestartAttempts) {
       this.log('Exceeded maximum restart attempts. Please refresh the page.', 'error');
       this.isListening = false;
+      
+      // Dispatch a fatal error event when we can't recover
+      const fatalErrorEvent = new CustomEvent('speech-recognition-fatal-error', {
+        detail: { timestamp: Date.now() }
+      });
+      window.dispatchEvent(fatalErrorEvent);
       return;
     }
     
@@ -344,33 +365,57 @@ export class SpeechToTextService {
       }
     }
     
-    // Create a completely new instance
+    // Create a completely new instance with increasingly longer backoff delays
+    const backoffTime = Math.min(1000 * Math.pow(1.5, this.recognitionRestartAttempts - 1), 10000);
+    this.log(`Using backoff delay of ${Math.round(backoffTime)}ms before restart`, 'debug');
+    
     setTimeout(() => {
-      this.recognition = initSpeechRecognition();
-      
-      if (this.recognition) {
-        this.recognition.lang = this.language;
-        this.recognition.continuous = true;
-        this.recognition.interimResults = true;
-        this.setupEventListeners();
-        
-        try {
-          this.isListening = true;
-          this.startTime = Date.now();
-          this.recognition.start();
-          this.log('Speech recognition recreated and started', 'success');
-          this.setupHealthCheck();
-        } catch (err) {
-          this.log('Failed to start new speech recognition instance:', 'error', err);
-          this.isListening = false;
-          
-          // Try one more time after a longer delay
-          setTimeout(() => this.forceRestart(), 2000);
-        }
+      // Try to release browser resources before creating a new instance
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices && 
+          typeof navigator.mediaDevices.getUserMedia === 'function') {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(stream => {
+            // Stop all tracks to release the microphone
+            stream.getTracks().forEach(track => track.stop());
+            this.log('Successfully released microphone resources', 'debug');
+          })
+          .catch(err => {
+            this.log('Could not access microphone: ' + err, 'debug');
+          })
+          .finally(() => {
+            this.createNewRecognitionInstance();
+          });
       } else {
-        this.log('Failed to create a new speech recognition instance', 'error');
+        this.createNewRecognitionInstance();
       }
-    }, 1000);
+    }, backoffTime);
+  }
+  
+  private createNewRecognitionInstance() {
+    this.recognition = initSpeechRecognition();
+    
+    if (this.recognition) {
+      this.recognition.lang = this.language;
+      this.recognition.continuous = true;
+      this.recognition.interimResults = true;
+      this.setupEventListeners();
+      
+      try {
+        this.isListening = true;
+        this.startTime = Date.now();
+        this.recognition.start();
+        this.log('Speech recognition recreated and started', 'success');
+        this.setupHealthCheck();
+      } catch (err) {
+        this.log('Failed to start new speech recognition instance:', 'error', err);
+        this.isListening = false;
+        
+        // Try one more time after a longer delay
+        setTimeout(() => this.forceRestart(), 2000);
+      }
+    } else {
+      this.log('Failed to create a new speech recognition instance', 'error');
+    }
   }
   
   // Setup a health check to make sure recognition is working

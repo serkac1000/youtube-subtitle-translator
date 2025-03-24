@@ -64,7 +64,15 @@ export default function Home() {
     const handleNetworkError = () => {
       logger.log('Network error detected in speech recognition', 'error');
       setNetworkError(true);
-      setErrorCount(prev => prev + 1);
+      
+      const newCount = errorCount + 1;
+      setErrorCount(newCount);
+      
+      // Auto-enable fallback mode after several network errors
+      if (newCount >= 5 && !useFallbackSubtitles) {
+        logger.log('Multiple network errors detected, auto-enabling fallback subtitle mode', 'warning');
+        setUseFallbackSubtitles(true);
+      }
     };
     
     const handleSpeechError = (e: any) => {
@@ -72,8 +80,15 @@ export default function Home() {
       setErrorCount(prev => prev + 1);
     };
     
+    const handleFatalError = () => {
+      logger.log('Fatal speech recognition error, auto-enabling fallback subtitle mode', 'error');
+      setNetworkError(true);
+      setUseFallbackSubtitles(true);
+    };
+    
     window.addEventListener('speech-recognition-network-error', handleNetworkError);
     window.addEventListener('speech-recognition-error', handleSpeechError);
+    window.addEventListener('speech-recognition-fatal-error', handleFatalError);
     
     // Cleanup on unmount
     return () => {
@@ -83,6 +98,7 @@ export default function Home() {
       }
       window.removeEventListener('speech-recognition-network-error', handleNetworkError);
       window.removeEventListener('speech-recognition-error', handleSpeechError);
+      window.removeEventListener('speech-recognition-fatal-error', handleFatalError);
     };
   }, []);
   
