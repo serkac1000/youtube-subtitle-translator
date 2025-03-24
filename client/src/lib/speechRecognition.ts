@@ -101,18 +101,62 @@ export class SpeechToTextService {
   start() {
     if (!this.recognition) return;
     
-    this.isListening = true;
-    this.startTime = Date.now();
-    this.recognition.start();
-    console.log('Speech recognition started');
+    // Only start if not already listening to prevent errors
+    if (this.isListening) {
+      console.log('Speech recognition already active');
+      return;
+    }
+    
+    try {
+      this.isListening = true;
+      this.startTime = Date.now();
+      this.recognition.start();
+      console.log('Speech recognition started');
+    } catch (err) {
+      console.error('Error starting speech recognition:', err);
+      this.isListening = false;
+      
+      // Try to recover by creating a new instance
+      setTimeout(() => {
+        this.recognition = initSpeechRecognition();
+        if (this.recognition) {
+          this.recognition.lang = this.language;
+          this.recognition.continuous = true;
+          this.recognition.interimResults = true;
+          this.setupEventListeners();
+          
+          try {
+            this.isListening = true;
+            this.startTime = Date.now();
+            this.recognition.start();
+            console.log('Speech recognition recreated and started');
+          } catch (startErr) {
+            console.error('Failed to start recreated speech recognition:', startErr);
+            this.isListening = false;
+          }
+        }
+      }, 500);
+    }
   }
   
   stop() {
     if (!this.recognition) return;
     
-    this.isListening = false;
-    this.recognition.stop();
-    console.log('Speech recognition stopped');
+    // Only stop if currently listening
+    if (!this.isListening) {
+      console.log('Speech recognition already stopped');
+      return this.cues;
+    }
+    
+    try {
+      this.isListening = false;
+      this.recognition.stop();
+      console.log('Speech recognition stopped');
+    } catch (err) {
+      console.error('Error stopping speech recognition:', err);
+      // Mark as not listening anyway
+      this.isListening = false;
+    }
     
     return this.cues;
   }
@@ -120,12 +164,39 @@ export class SpeechToTextService {
   restart() {
     if (!this.recognition || !this.isListening) return;
     
-    this.recognition.stop();
-    setTimeout(() => {
-      if (this.isListening) {
-        this.recognition.start();
-      }
-    }, 300);
+    try {
+      this.recognition.stop();
+      this.isListening = false; // Mark as not listening during the restart process
+      
+      setTimeout(() => {
+        if (this.recognition) { // Check again in case it was cleared during the timeout
+          this.isListening = true; // Set back to listening before starting
+          try {
+            this.recognition.start();
+            console.log('Speech recognition restarted');
+          } catch (err) {
+            console.error('Error restarting speech recognition:', err);
+            // Try to recover
+            this.isListening = false;
+            this.recognition.stop();
+            
+            // Create a new instance as a last resort
+            this.recognition = initSpeechRecognition();
+            if (this.recognition) {
+              this.recognition.lang = this.language;
+              this.recognition.continuous = true;
+              this.recognition.interimResults = true;
+              this.setupEventListeners();
+              this.isListening = true;
+              this.recognition.start();
+              console.log('Speech recognition recreated and started');
+            }
+          }
+        }
+      }, 500); // Increased timeout to allow proper cleanup
+    } catch (err) {
+      console.error('Error stopping speech recognition before restart:', err);
+    }
   }
   
   changeLanguage(language: string) {
@@ -142,9 +213,9 @@ export class SpeechToTextService {
   
   getCurrentSubtitleTrack(): SubtitleTrack {
     return {
-      id: `track-${this.language}`,
+      id: `track-speech-${this.language}`,
       language: this.language.split('-')[0], // Extract primary language code
-      label: this.getLanguageLabel(this.language),
+      label: this.getLanguageLabel(this.language) + ' (Speech)',
       cues: this.cues,
       isDefault: true
     };

@@ -334,17 +334,36 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const toggleSpeechRecognition = () => {
     if (!isSTTSupported) return;
     
-    setUseSpeechRecognition(!useSpeechRecognition);
+    // Toggle the state
+    const newState = !useSpeechRecognition;
+    setUseSpeechRecognition(newState);
     
-    if (!useSpeechRecognition) {
+    console.log(newState ? 'Enabling speech recognition' : 'Disabling speech recognition');
+    
+    if (newState) {
       // Starting speech recognition
-      if (playerState === 'playing' && speechToTextService.current) {
-        setSpeechToTextEnabled(true);
-        speechToTextService.current.start();
+      if (speechToTextService.current) {
+        // Make sure to stop any existing recognition first
+        speechToTextService.current.stop();
         
-        // Create a new subtitle track for speech recognition
-        const speechTrack = speechToTextService.current.getCurrentSubtitleTrack();
-        onTrackChange(speechTrack);
+        // Start fresh
+        setTimeout(() => {
+          if (speechToTextService.current) {
+            console.log('Starting speech recognition for testing');
+            setSpeechToTextEnabled(true);
+            
+            // If player is not playing, start it
+            if (playerState !== 'playing' && player) {
+              player.playVideo();
+            }
+            
+            speechToTextService.current.start();
+            
+            // Create a new subtitle track for speech recognition
+            const speechTrack = speechToTextService.current.getCurrentSubtitleTrack();
+            onTrackChange(speechTrack);
+          }
+        }, 300);
       }
     } else {
       // Stopping speech recognition
@@ -354,6 +373,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         
         // Clear the current subtitle
         setCurrentSubtitle('');
+        
+        // Clear any selected speech track
+        if (selectedTrack && selectedTrack.id.startsWith('track-')) {
+          onTrackChange(null);
+        }
       }
     }
   };
