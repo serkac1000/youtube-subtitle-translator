@@ -106,18 +106,49 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
   
-  // Load YouTube API
+  // Load YouTube API and initialize player
   useEffect(() => {
-    const tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
+    // Clean up previous player if it exists
+    if (player) {
+      player.destroy();
+      setPlayer(null);
+    }
     
-    window.onYouTubeIframeAPIReady = initializePlayer;
+    // Reset state when video ID changes
+    setCurrentTime(0);
+    setDuration(0);
+    setProgress(0);
+    setCurrentSubtitle('');
     
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    // Clear any previous progress tracking interval
+    if (progressInterval.current) {
+      window.clearInterval(progressInterval.current);
+      progressInterval.current = null;
+    }
+    
+    // Check if YouTube API is already loaded
+    if (window.YT && window.YT.Player) {
+      // If API is already loaded, initialize the player directly
+      initializePlayer();
+    } else {
+      // If API is not loaded yet, load it
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      
+      window.onYouTubeIframeAPIReady = initializePlayer;
+      
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    }
     
     return () => {
+      // Clean up on component unmount or when videoId changes
+      if (player) {
+        player.destroy();
+      }
+      
       window.onYouTubeIframeAPIReady = null;
+      
       if (progressInterval.current) {
         window.clearInterval(progressInterval.current);
       }
@@ -128,27 +159,45 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const initializePlayer = () => {
     if (!playerRef.current) return;
     
-    const ytPlayer = new YT.Player(playerRef.current, {
-      videoId,
-      playerVars: {
-        autoplay: 0,
-        controls: 0,
-        disablekb: 1,
-        enablejsapi: 1,
-        iv_load_policy: 3,
-        modestbranding: 1,
-        rel: 0,
-        showinfo: 0,
-        cc_load_policy: 0, // Disable YouTube's built-in captions
-        cc_lang_pref: 'ru' // Set default subtitle language if needed
-      },
-      events: {
-        onReady: onPlayerReady,
-        onStateChange: onPlayerStateChange
-      }
-    });
+    // We need to make sure the player container is empty before creating a new player
+    // First, check if the ref still has a child element
+    while (playerRef.current.firstChild) {
+      playerRef.current.removeChild(playerRef.current.firstChild);
+    }
     
-    setPlayer(ytPlayer);
+    // Create a new div element to host the player
+    const playerElement = document.createElement('div');
+    playerElement.id = 'youtube-player-element';
+    playerRef.current.appendChild(playerElement);
+    
+    try {
+      const ytPlayer = new YT.Player(playerElement, {
+        videoId,
+        playerVars: {
+          autoplay: 1, // Set to 1 to autoplay
+          controls: 0,
+          disablekb: 1,
+          enablejsapi: 1,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          rel: 0,
+          showinfo: 0,
+          cc_load_policy: 0, // Disable YouTube's built-in captions
+          cc_lang_pref: 'ru' // Set default subtitle language if needed
+        },
+        events: {
+          onReady: onPlayerReady,
+          onStateChange: onPlayerStateChange,
+          onError: (event) => {
+            console.error('YouTube player error:', event);
+          }
+        }
+      });
+      
+      setPlayer(ytPlayer);
+    } catch (error) {
+      console.error('Error initializing YouTube player:', error);
+    }
   };
   
   // Player ready event handler
