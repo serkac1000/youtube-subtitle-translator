@@ -15,8 +15,18 @@ export interface Logger {
 // Initialize the speech recognition with the appropriate API
 const initSpeechRecognition = () => {
   try {
-    const window = globalThis as unknown as IWindow;
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    // First check if the browser is in a context that supports speech recognition
+    // This helps with sandboxed environments like iframes
+    if (typeof navigator === 'undefined' || 
+        !navigator || 
+        !navigator.mediaDevices || 
+        typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      console.error('Browser environment does not support media devices needed for speech recognition');
+      return null;
+    }
+    
+    const browserWindow = globalThis as unknown as IWindow;
+    const SpeechRecognition = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
       console.error('Speech recognition not supported in this browser');
@@ -25,7 +35,16 @@ const initSpeechRecognition = () => {
     
     // Create new instance and immediately verify it works
     const instance = new SpeechRecognition();
-    console.log('Speech recognition instance created successfully:', !!instance);
+    
+    // Test that the instance has the expected properties and methods
+    if (!instance || 
+        typeof instance.start !== 'function' || 
+        typeof instance.stop !== 'function') {
+      console.error('Speech recognition instance is not valid');
+      return null;
+    }
+    
+    console.log('Speech recognition instance created successfully:', true);
     return instance;
   } catch (error) {
     console.error('Error initializing speech recognition:', error);

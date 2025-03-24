@@ -43,29 +43,48 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Initialize YouTube player
   useEffect(() => {
-    // Load YouTube iFrame API
-    const tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag);
-
-    window.onYouTubeIframeAPIReady = () => {
+    // Define the callback in the window object
+    (window as any).onYouTubeIframeAPIReady = () => {
       if (videoId && playerRef.current) {
         createYouTubePlayer(videoId);
       }
     };
+    
+    // Check if the API is already loaded
+    if ((window as any).YT && (window as any).YT.Player) {
+      if (videoId && playerRef.current) {
+        createYouTubePlayer(videoId);
+      }
+    } else {
+      // Load YouTube iFrame API
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      
+      // Find first script element and insert before it
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      if (firstScriptTag && firstScriptTag.parentNode) {
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      } else {
+        // Fallback - append to head
+        document.head.appendChild(tag);
+      }
+    }
 
     return () => {
       // Clean up player on unmount
       if (youtubePlayerRef.current) {
-        youtubePlayerRef.current.destroy();
+        try {
+          youtubePlayerRef.current.destroy();
+        } catch (err) {
+          console.error('Error destroying YouTube player:', err);
+        }
       }
     };
   }, []);
 
   // Update player when video ID changes
   useEffect(() => {
-    if (videoId && window.YT && window.YT.Player) {
+    if (videoId && (window as any).YT && (window as any).YT.Player) {
       createYouTubePlayer(videoId);
     }
   }, [videoId]);
@@ -73,33 +92,42 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const createYouTubePlayer = (id: string) => {
     // Destroy existing player if it exists
     if (youtubePlayerRef.current) {
-      youtubePlayerRef.current.destroy();
+      try {
+        youtubePlayerRef.current.destroy();
+      } catch (error) {
+        console.error('Error destroying player:', error);
+      }
     }
 
     if (!playerRef.current) return;
 
-    // Create a new player instance
-    youtubePlayerRef.current = new window.YT.Player(playerRef.current, {
-      height: '100%',
-      width: '100%',
-      videoId: id,
-      playerVars: {
-        autoplay: 0,
-        controls: 1,
-        modestbranding: 1,
-        rel: 0,
-      },
-      events: {
-        onReady: () => {
-          setIsLoading(false);
-          if (onVideoLoad) onVideoLoad();
+    try {
+      // Create a new player instance
+      youtubePlayerRef.current = new (window as any).YT.Player(playerRef.current, {
+        height: '100%',
+        width: '100%',
+        videoId: id,
+        playerVars: {
+          autoplay: 0,
+          controls: 1,
+          modestbranding: 1,
+          rel: 0,
         },
-        onError: (error: any) => {
-          console.error('YouTube Player Error:', error);
-          setIsLoading(false);
+        events: {
+          onReady: () => {
+            setIsLoading(false);
+            if (onVideoLoad) onVideoLoad();
+          },
+          onError: (error: any) => {
+            console.error('YouTube Player Error:', error);
+            setIsLoading(false);
+          }
         }
-      }
-    });
+      });
+    } catch (error) {
+      console.error('Error creating YouTube player:', error);
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -130,8 +158,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Subtitles overlay */}
       {subtitle && (
         <div className="absolute bottom-4 left-0 right-0 mx-auto text-center z-10">
-          <div className="inline-block bg-black bg-opacity-70 text-white px-4 py-2 rounded text-lg">
+          <div className="inline-block bg-black bg-opacity-80 text-white px-4 py-2 rounded text-lg max-w-[90%]">
             {subtitle}
+          </div>
+        </div>
+      )}
+      {!subtitle && (
+        <div className="absolute bottom-4 left-0 right-0 mx-auto text-center z-10">
+          <div className="inline-block bg-black bg-opacity-80 text-gray-400 px-4 py-2 rounded text-lg">
+            Waiting for speech...
           </div>
         </div>
       )}

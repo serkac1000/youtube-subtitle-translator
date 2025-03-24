@@ -8,6 +8,7 @@ import DebugLogger from '../components/debug/DebugLogger';
 import { RecognitionStatus, SubtitleCue } from '@shared/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function Home() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
